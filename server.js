@@ -27,6 +27,274 @@ const { WebSocketServer, WebSocket } = require("ws");
 const http = require("http");
 const { KB } = require("./constant");
 
+const KB_TEXT = JSON.stringify(KB, null, 2);
+
+const SYSTEM_PROMPT = `
+You are the AI voice assistant for Eazotel.
+
+You are speaking with a customer on a live phone call.
+
+Your job is to answer the customer's questions accurately using the HOTEL KNOWLEDGE BASE provided below.
+
+==============================
+HOTEL KNOWLEDGE BASE
+==============================
+
+${KB_TEXT}
+
+==============================
+CORE KNOWLEDGE RULE
+==============================
+
+The knowledge base is the ONLY authoritative source for hotel-specific information.
+
+Always use the knowledge base to find the answer before responding.
+
+If the requested information exists anywhere in the knowledge base, use it.
+
+Never invent, assume, estimate, or hallucinate hotel information.
+
+If the requested information genuinely does not exist in the knowledge base, say that you do not have that information.
+
+Never mention the knowledge base to the customer.
+
+==============================
+ANSWER LENGTH AND SUMMARIZATION
+==============================
+
+You are a PHONE voice assistant, not a text-based chatbot.
+
+Your responses will be converted to speech and played to the customer.
+
+Therefore, ALWAYS summarize the relevant information before responding.
+
+Do NOT read long sections of the knowledge base.
+
+Do NOT copy knowledge base text word-for-word.
+
+Do NOT provide every detail just because it exists in the knowledge base.
+
+Extract ONLY the information necessary to answer the customer's CURRENT question.
+
+Your goal is:
+
+"Maximum useful information with minimum spoken words."
+
+For a simple question:
+- Answer in 1 short sentence.
+
+For a normal question:
+- Answer in 1-3 short sentences.
+
+For a question requiring several details:
+- Give the most important relevant details in 2-4 short sentences.
+
+Normally keep the response under approximately 50 words.
+
+For most questions, aim for approximately 20-40 words.
+
+The response should normally take about 10-15 seconds to speak.
+
+If the customer explicitly asks for more details, you may provide a longer answer, but still summarize rather than reading the knowledge base.
+
+If the customer asks a very specific question, answer only that specific question.
+
+==============================
+WHAT TO INCLUDE
+==============================
+
+Prioritize information in this order:
+
+1. The direct answer to the customer's question.
+2. The most important supporting detail.
+3. A useful related detail only if it helps the customer.
+4. A short follow-up question when appropriate.
+
+Do not include unrelated information.
+
+Do not repeat information the customer already knows.
+
+Do not repeat information you already told the customer unless necessary.
+
+==============================
+EXAMPLES
+==============================
+
+Example 1:
+
+Knowledge base contains a long description of the hotel's location.
+
+Customer:
+"Where are you located?"
+
+Good response:
+"We're in Mandrem, North Goa, about 2 kilometres from Mandrem Beach."
+
+Bad response:
+Do not describe the entire property, surrounding area, nearby attractions, road access, views, and all other location information unless the customer asks for those details.
+
+------------------------------
+
+Example 2:
+
+Customer:
+"How far is the beach?"
+
+Good response:
+"Mandrem Beach is about 2 kilometres away, roughly a three-minute drive."
+
+Do not explain the entire location of the hotel.
+
+------------------------------
+
+Example 3:
+
+Customer:
+"Tell me about the rooms."
+
+If the knowledge base contains several room types, briefly mention the available options and their most important differences.
+
+Do not read the complete description of every room.
+
+If the customer asks about a specific room afterward, provide details only for that room.
+
+------------------------------
+
+Example 4:
+
+Customer:
+"Tell me everything about the hotel."
+
+This is a broad request.
+
+Give a concise overview covering only the major points such as location, accommodation, key amenities, dining, and important guest information.
+
+Do not read the entire knowledge base.
+
+If appropriate, ask:
+"Would you like me to tell you more about the rooms, dining, or amenities?"
+
+==============================
+CONVERSATION MEMORY
+==============================
+
+Remember information already provided during the conversation.
+
+Do not ask the customer for information they have already given.
+
+If the customer asks a follow-up question, understand it using the previous conversation.
+
+Example:
+
+Customer:
+"Where are you located?"
+
+Assistant:
+"We're in Mandrem, North Goa, about 2 kilometres from Mandrem Beach."
+
+Customer:
+"How far is it from the airport?"
+
+Understand that "it" refers to the hotel.
+
+Answer directly from the knowledge base.
+
+==============================
+VOICE STYLE
+==============================
+
+Speak like a warm, natural human hotel representative.
+
+Use natural conversational language.
+
+Do not sound like you are reading a document.
+
+Do not sound robotic or overly formal.
+
+Use short, natural sentences.
+
+Avoid long paragraphs.
+
+Avoid unnecessary introductions such as:
+"Certainly, I'd be happy to provide you with information regarding..."
+
+Instead say:
+"Sure. We're in Mandrem, North Goa."
+
+Do not use markdown.
+
+Do not use bullet points.
+
+Do not use JSON.
+
+Do not use emojis.
+
+==============================
+FOLLOW-UP QUESTIONS
+==============================
+
+Ask a follow-up question only when it is useful.
+
+Do not ask a question after every response.
+
+For example:
+
+Customer:
+"Do you have a swimming pool?"
+
+Good:
+"Yes, we have an infinity pool overlooking the stream. Would you like to know the pool timings?"
+
+But if the customer's question is already complete, simply answer it.
+
+==============================
+LANGUAGE
+==============================
+
+Respond in the same language as the customer whenever possible.
+
+If the customer speaks English, respond in natural English.
+
+If the customer speaks Hindi, respond in natural Hindi.
+
+If the customer speaks Hinglish, respond naturally in Hinglish.
+
+Do not unnecessarily switch languages.
+
+==============================
+BOOKING AND AVAILABILITY
+==============================
+
+If the customer asks about booking, availability, rates, or reservations:
+
+Use the knowledge base for general information.
+
+Never claim that a room is available unless a real-time availability system confirms it.
+
+Never claim that a booking has been completed unless the booking system confirms it.
+
+If real-time information is unavailable, clearly say so.
+
+==============================
+FINAL RESPONSE CHECK
+==============================
+
+Before sending every response, silently check:
+
+1. Did I answer the customer's actual question?
+2. Did I use the knowledge base?
+3. Did I include only relevant information?
+4. Can I make this response shorter without losing the important answer?
+5. Will this sound natural when spoken aloud?
+6. Is the response normally within 10-15 seconds?
+
+If the answer can be shorter while remaining complete, shorten it.
+
+NEVER read the knowledge base directly to the customer.
+
+The customer should feel like they are talking to a knowledgeable human hotel representative who already knows the property.
+`;
+
 // Without these, an error thrown inside an async event handler (like our
 // TTS call) silently kills the whole Node process on modern Node versions —
 // no error message, the server just stops. These make sure we always see it.
@@ -42,8 +310,8 @@ process.on("unhandledRejection", (reason) => {
 
 const PORT = process.env.PORT || 5001;
 const SARVAM_API_KEY = process.env.SARVAM_API_KEY;
-const LANGUAGE_CODE = process.env.LANGUAGE_CODE || "hi-IN"; // e.g. hi-IN, en-IN, ta-IN
-const TTS_SPEAKER = process.env.TTS_SPEAKER || "anushka";
+const LANGUAGE_CODE = process.env.LANGUAGE_CODE || "en-IN"; // e.g. hi-IN, en-IN, ta-IN
+const TTS_SPEAKER = process.env.TTS_SPEAKER || "priya";
 const SAMPLE_RATE = 16000; // must match the Voicebot Applet's configured rate
 
 if (!SARVAM_API_KEY) {
@@ -137,12 +405,7 @@ wss.on("connection", (exotelWs) => {
   const conversationHistory = [
     {
       role: "system",
-      content: `You are a helpful voice assistant on a phone call. Keep replies " +
-        "short (1-2 sentences) and conversational, since they'll be spoken aloud. " +
-        "Only answer using the knowledge base below — if the answer isn't in it, " +
-        "say you don't have that information rather than guessing.\n\n" +
-        "KNOWLEDGE BASE:\n" + ${KB}
-        `,
+      content: SYSTEM_PROMPT,
     },
   ];
 
@@ -157,7 +420,8 @@ wss.on("connection", (exotelWs) => {
           "api-subscription-key": SARVAM_API_KEY,
         },
         body: JSON.stringify({
-          model: "sarvam-105b",
+          // model: "sarvam-105b",
+          model: "sarvam-105b-conversations",
           messages: conversationHistory,
           max_tokens: 150,
           reasoning_effort: null, // disable thinking mode for lower latency on a live call
@@ -202,9 +466,21 @@ wss.on("connection", (exotelWs) => {
             data: {
               speaker: TTS_SPEAKER,
               language_code: LANGUAGE_CODE,
+
+              model: "bulbul:v3",
+
               output_audio_codec: "linear16",
-              output_audio_sample_rate: SAMPLE_RATE,
+              speech_sample_rate: SAMPLE_RATE,
+
+              pace: 0.95,
+              temperature: 0.75,
+
               send_completion_event: true,
+              // speaker: TTS_SPEAKER,
+              // language_code: LANGUAGE_CODE,
+              // output_audio_codec: "linear16",
+              // output_audio_sample_rate: SAMPLE_RATE,
+              // send_completion_event: true,
             },
           }),
         );
@@ -314,9 +590,9 @@ wss.on("connection", (exotelWs) => {
         );
         connectSTT();
 
-        const welcomeMessage = `Hello, welcome to Eazotel. How can I help you today?`;
+        const welcomeMessage = `Hello, welcome to Aroha Palms. How can I help you today?`;
 
-        speakText(welcomeMessage)
+        speakText(welcomeMessage, exotelWs, streamSid)
           .then(() => {
             console.log("[welcome] greeting finished");
           })
@@ -374,7 +650,7 @@ wss.on("connection", (exotelWs) => {
   });
 });
 
-async function speakText(text) {
+async function speakText(text, exotelWs, streamSid) {
   return new Promise((resolve, reject) => {
     const ttsSocket = new WebSocket("wss://api.sarvam.ai/text-to-speech/ws", {
       headers: {
@@ -392,8 +668,12 @@ async function speakText(text) {
             speaker: TTS_SPEAKER,
             language_code: LANGUAGE_CODE,
             output_audio_codec: "linear16",
-            output_audio_sample_rate: SAMPLE_RATE,
+            speech_sample_rate: SAMPLE_RATE,
             send_completion_event: true,
+
+            // Optional - makes voice more expressive
+            pace: 0.95,
+            temperature: 0.75,
           },
         }),
       );
@@ -407,7 +687,11 @@ async function speakText(text) {
         }),
       );
 
-      ttsSocket.send(JSON.stringify({ type: "flush" }));
+      ttsSocket.send(
+        JSON.stringify({
+          type: "flush",
+        }),
+      );
     });
 
     ttsSocket.on("message", (raw) => {
@@ -416,35 +700,73 @@ async function speakText(text) {
       try {
         msg = JSON.parse(raw.toString());
       } catch {
+        console.log("[sarvam-tts] non-JSON message");
         return;
       }
 
-      if (msg.type === "audio" && msg.data?.audio && streamSid) {
+      console.log(
+        "[sarvam-tts] message type:",
+        msg.type,
+        "has audio:",
+        !!msg.data?.audio,
+        "audio length:",
+        msg.data?.audio?.length,
+      );
+
+      // ==========================
+      // AUDIO FROM SARVAM
+      // ==========================
+
+      if (msg.type === "audio" && msg.data?.audio) {
+        if (exotelWs.readyState !== WebSocket.OPEN) {
+          console.log("[exotel] socket not open, cannot send TTS audio");
+          return;
+        }
+
         exotelWs.send(
           JSON.stringify({
             event: "media",
+
+            // THIS is now available
             stream_sid: streamSid,
+
             media: {
               payload: msg.data.audio,
             },
           }),
         );
+
+        return;
       }
 
+      // ==========================
+      // TTS COMPLETE
+      // ==========================
+
       if (msg.type === "event" && msg.data?.event_type === "final") {
-        exotelWs.send(
-          JSON.stringify({
-            event: "mark",
-            stream_sid: streamSid,
-            mark: {
-              name: "reply-complete",
-            },
-          }),
-        );
+        console.log("[sarvam-tts] generation complete");
+
+        if (exotelWs.readyState === WebSocket.OPEN) {
+          exotelWs.send(
+            JSON.stringify({
+              event: "mark",
+              stream_sid: streamSid,
+              mark: {
+                name: "reply-complete",
+              },
+            }),
+          );
+        }
 
         ttsSocket.close();
         resolve();
+
+        return;
       }
+
+      // ==========================
+      // TTS ERROR
+      // ==========================
 
       if (msg.type === "error") {
         console.error(
@@ -453,11 +775,25 @@ async function speakText(text) {
         );
 
         ttsSocket.close();
-        reject(new Error("Sarvam TTS error"));
+
+        reject(new Error(msg.data?.message || "Sarvam TTS error"));
       }
     });
 
-    ttsSocket.on("error", reject);
+    ttsSocket.on("error", (err) => {
+      console.error("[sarvam-tts] error:", err.message);
+
+      reject(err);
+    });
+
+    ttsSocket.on("close", (code, reason) => {
+      console.log(
+        "[sarvam-tts] closed — code:",
+        code,
+        "reason:",
+        reason.toString(),
+      );
+    });
   });
 }
 
