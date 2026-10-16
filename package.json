@@ -1,0 +1,27 @@
+{
+  "name": "exotel-sarvam-bridge",
+  "version": "1.2.0",
+  "description": "Bridge server connecting Exotel Voicebot Applet to Sarvam AI STT/LLM/TTS",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "dev:debug": "LOG_LEVEL=debug nodemon src/index.js",
+    "check:whatsapp": "node scripts/check-whatsapp.js",
+    "create:templates": "node scripts/create-whatsapp-templates.js",
+    "test:call": "node scripts/simulate-call.js"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "jsonrepair": "^3.15.0",
+    "mongoose": "^9.10.2",
+    "ws": "^8.17.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
