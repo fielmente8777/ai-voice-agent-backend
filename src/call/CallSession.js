@@ -16,6 +16,7 @@ import kbService from "../knowledgeBase/kbService.js";
 import whatsappService from "../whatsapp/whatsappService.js";
 import whatsappAccountService from "../whatsapp/whatsappAccountService.js";
 import settingsService from "../knowledgeBase/settingsService.js";
+import quickReplyService from "../knowledgeBase/quickReplyService.js";
 import {
   buildSystemPrompt,
   buildWelcomeMessage,
@@ -86,7 +87,11 @@ function loadHotel(ndid, waNdid, log) {
       log.error("settings fetch failed:", err.message);
       return { whatsappEnabled: false, voiceEnabled: true, defaultMessage: null, found: false };
     }),
-  ]).then(([kb, waAccount, settings]) => ({ kb, waAccount, settings }));
+    quickReplyService.fetchQuickRepliesText(ndid).catch((err) => {
+      log.error("quick replies fetch failed:", err.message);
+      return "";
+    }),
+  ]).then(([kb, waAccount, settings, quickRepliesText]) => ({ kb, waAccount, settings, quickRepliesText }));
 }
 
 // Server start-up: load a hotel and pre-make its welcome audio.
@@ -273,7 +278,7 @@ export default class CallSession {
     this.initialized = true;
 
     const started = Date.now();
-    const { kb, waAccount, settings } = await (this.hotel ??= loadHotel(this.ndid, this.waNdid, this.log));
+    const { kb, waAccount, settings, quickRepliesText } = await (this.hotel ??= loadHotel(this.ndid, this.waNdid, this.log));
 
     if (!kb) {
       this.log.warn(`no KB found for ndid "${this.ndid}" — bot has no hotel data`);
@@ -305,6 +310,7 @@ export default class CallSession {
         whatsappEnabled: this.whatsappEnabled,
         whatsappOffMessage: this.whatsappOffMessage,
         catalogText: catalogForPrompt(this.catalog),
+        quickRepliesText,
       }),
     );
 

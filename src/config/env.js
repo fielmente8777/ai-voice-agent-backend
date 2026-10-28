@@ -177,6 +177,12 @@ const config = {
       "Our team will send it to you shortly.",
   },
 
+  // The hotel's saved quick replies — an extra knowledge source for the agent.
+  quickReplies: {
+    collection: "quickreplies",
+    cacheTtlMs: 5 * 60 * 1000,
+  },
+
   knowledgeBase: {
     collection: "KnowledgeBase",
     ndidField: "ndid", // change if your documents use a different field name

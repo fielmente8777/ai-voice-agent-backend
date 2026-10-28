@@ -114,7 +114,7 @@ AFTER SENDING
 // Main prompt
 // ------------------------------------------------------------
 
-export function buildSystemPrompt({ kb, hotelName, agentName, callerLast4, whatsappEnabled, whatsappOffMessage, catalogText }) {
+export function buildSystemPrompt({ kb, hotelName, agentName, callerLast4, whatsappEnabled, whatsappOffMessage, catalogText, quickRepliesText }) {
   // Lines that differ when the hotel has WhatsApp switched off (whatsappIntegrationEnabled = false).
   const wa = (on, off) => (whatsappEnabled ? on : off);
 
@@ -268,5 +268,13 @@ HOTEL KNOWLEDGE BASE
 ==============================
 
 ${KB_TEXT}
-`;
+${quickRepliesText ? `
+==============================
+HOTEL QUICK REPLIES (also part of the knowledge base)
+==============================
+
+The hotel's own saved answers. Use them as facts when they answer the caller's question, and say them in your own spoken words (never read them out as written, never read links aloud).
+
+${quickRepliesText}
+` : ""}`;
 }
