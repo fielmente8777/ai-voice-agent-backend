@@ -119,6 +119,8 @@ Exotel "stop"   → CallSession.end() → close STT / TTS
 
 ## WhatsApp during the call
 
+**On/off per hotel.** With `HOTEL_SETTINGS_COLLECTION` set, WhatsApp is used only when that hotel's settings document has `whatsappIntegrationEnabled: true` (`src/knowledgeBase/settingsService.js`, re-read every minute). When it is off (or the hotel has no settings document), the agent never offers, asks about or sends anything on WhatsApp; if a caller asks for a brochure or photos it says the hotel's default message (`whatsappDefaultMessage` / `defaultMessage` on the settings document), or "Our team will send it to you shortly." The call log shows `WhatsApp integration is switched OFF for this hotel`.
+
 The LLM gets the whole KB and answers with ONE JSON object.
 
 ```json

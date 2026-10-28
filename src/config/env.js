@@ -154,6 +154,29 @@ const config = {
     },
   },
 
+  // Per-hotel switches from the dashboard ({ ndid, voiceEnabled, whatsappIntegrationEnabled }).
+  // See src/knowledgeBase/settingsService.js.
+  hotelSettings: {
+    // Mongo collection with one settings document per hotel. Empty = not used
+    // (WhatsApp is then on for every hotel that has a WhatsApp account).
+    collection: (
+      process.env.HOTEL_SETTINGS_COLLECTION || "VoiceInstructionSettings"
+    ).trim(),
+    cacheTtlMs: 60 * 1000,
+    // Fields that may hold the hotel's own line for "we can't send on WhatsApp".
+    defaultMessageFields: [
+      "whatsappDefaultMessage",
+      "defaultMessage",
+      "default_message",
+      "fallbackMessage",
+      "fallback_message",
+    ],
+    // Said when WhatsApp is off and the hotel has no default message.
+    whatsappOffMessage:
+      process.env.WHATSAPP_OFF_MESSAGE ||
+      "Our team will send it to you shortly.",
+  },
+
   knowledgeBase: {
     collection: "KnowledgeBase",
     ndidField: "ndid", // change if your documents use a different field name

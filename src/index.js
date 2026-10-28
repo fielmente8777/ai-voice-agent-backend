@@ -27,7 +27,9 @@ async function main() {
 
   // Optional: have these hotels' KB and welcome audio ready before the first call.
   for (const ndid of config.prewarmNdids) {
-    prewarmHotel(ndid, log).catch((err) => log.warn(`prewarm failed for ${ndid}:`, err.message));
+    prewarmHotel(ndid, log).catch((err) =>
+      log.warn(`prewarm failed for ${ndid}:`, err.message),
+    );
   }
 
   const { server, wss } = createServer();

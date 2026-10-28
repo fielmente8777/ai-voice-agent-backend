@@ -15,6 +15,7 @@ import config from "../config/env.js";
 import kbService from "../knowledgeBase/kbService.js";
 import whatsappService from "../whatsapp/whatsappService.js";
 import whatsappAccountService from "../whatsapp/whatsappAccountService.js";
+import settingsService from "../knowledgeBase/settingsService.js";
 import {
   buildSystemPrompt,
   buildWelcomeMessage,
@@ -62,7 +63,7 @@ const ABUSE_NOTES = {
 };
 
 // A bare "hello?" said over the welcome needs no answer of its own.
-const JUST_A_GREETING = /^(hello|hi|hey|helo|hallo|haan|han|ji|namaste|namaskar|हेलो|हैलो|हाँ|हां|जी|नमस्ते|नमस्कार|[s.,!?।])+$/i;
+const JUST_A_GREETING = /^(hello|hi|hey|helo|hallo|haan|han|ji|namaste|namaskar|हेलो|हैलो|हाँ|हां|जी|नमस्ते|नमस्कार|[\s.,!?।])+$/i;
 
 // The AI writes this token where the hotel's WhatsApp number belongs; the real
 // digits are put in just before speaking, so it can never say a wrong number.
@@ -70,7 +71,7 @@ const HOTEL_NUMBER_TOKEN = /\{?\bHOTEL_WHATSAPP_NUMBER\b\}?/g;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// KB + WhatsApp account for a hotel (both cached after the first call).
+// KB + WhatsApp account + dashboard settings for a hotel (all cached).
 function loadHotel(ndid, waNdid, log) {
   return Promise.all([
     kbService.fetchKnowledgeBase(ndid).catch((err) => {
@@ -81,7 +82,11 @@ function loadHotel(ndid, waNdid, log) {
       log.error("whatsapp account fetch failed:", err.message);
       return null;
     }),
-  ]).then(([kb, waAccount]) => ({ kb, waAccount }));
+    settingsService.getHotelSettings(ndid).catch((err) => {
+      log.error("settings fetch failed:", err.message);
+      return { whatsappEnabled: false, voiceEnabled: true, defaultMessage: null, found: false };
+    }),
+  ]).then(([kb, waAccount, settings]) => ({ kb, waAccount, settings }));
 }
 
 // Server start-up: load a hotel and pre-make its welcome audio.
@@ -268,7 +273,7 @@ export default class CallSession {
     this.initialized = true;
 
     const started = Date.now();
-    const { kb, waAccount } = await (this.hotel ??= loadHotel(this.ndid, this.waNdid, this.log));
+    const { kb, waAccount, settings } = await (this.hotel ??= loadHotel(this.ndid, this.waNdid, this.log));
 
     if (!kb) {
       this.log.warn(`no KB found for ndid "${this.ndid}" — bot has no hotel data`);
@@ -280,8 +285,14 @@ export default class CallSession {
     this.hotelName = kbService.getHotelName(kb);
     this.agentName = getAgentName(kb);
     this.catalog = buildCatalog(kb, this.hotelName);
-    this.whatsappEnabled = Boolean(waAccount);
+    // WhatsApp only when the dashboard switch (whatsappIntegrationEnabled) is on AND an account exists.
+    this.whatsappEnabled = settings.whatsappEnabled && Boolean(waAccount);
     this.hotelWhatsapp = waAccount?.displayNumber || null;
+    // What the agent says when WhatsApp is off and the caller asks for something on it.
+    this.whatsappOffMessage = settings.defaultMessage || config.hotelSettings.whatsappOffMessage;
+
+    if (!settings.whatsappEnabled) this.log.info("WhatsApp integration is switched OFF for this hotel (whatsappIntegrationEnabled)");
+    else if (!waAccount) this.log.warn("WhatsApp integration is ON but no WhatsApp account was found for this hotel");
 
     this.log.info(`catalog: ${this.catalog.rooms.length} rooms, ${this.catalog.brochures.length} brochures, links: ${Object.keys(this.catalog.links).join(",") || "-"}`);
 
@@ -292,6 +303,7 @@ export default class CallSession {
         agentName: this.agentName,
         callerLast4: lastDigits(this.callerNumber),
         whatsappEnabled: this.whatsappEnabled,
+        whatsappOffMessage: this.whatsappOffMessage,
         catalogText: catalogForPrompt(this.catalog),
       }),
     );
@@ -617,6 +629,13 @@ export default class CallSession {
       // First send of the call and nobody has agreed where to: the AI must ask first.
       if (!offerSent && !this.awaitingNumber && this.needsNumberChoice() && isSendRequest(transcript)) {
         this.conversation.addNote(ASK_WHICH_NUMBER);
+      }
+
+      // WhatsApp is switched off for this hotel: the hotel's own line, nothing about WhatsApp.
+      if (!this.whatsappEnabled && isSendRequest(transcript)) {
+        this.conversation.addNote(
+          `WhatsApp is not available for this hotel. Do not offer, promise or mention sending anything on WhatsApp, and do not ask for a number. Answer with this message, in the caller's language: "${this.whatsappOffMessage}"`,
+        );
       }
 
       if (isAbusive(transcript)) {
