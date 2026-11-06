@@ -101,12 +101,13 @@ Exotel "stop"   → CallSession.end() → close STT / TTS
 
 - **Welcome:** the audio for each hotel's greeting is kept in memory, so it plays the moment the call connects. Only the first call after a restart generates it (~0.7s); list hotels in `PREWARM_NDIDS` to avoid even that.
 - **Replies:** the LLM is streamed and the first sentence goes to TTS while the rest is still being written. The TTS socket is opened in parallel with the LLM request. Each reply logs `first words ready in Nms` and `llm took Nms`.
-- What's left is mostly Sarvam: ~0.5s for STT to decide the caller has stopped, ~1s for the LLM's first words (the whole KB is in the prompt — a smaller KB is faster).
+- What's left is mostly Sarvam: ~0.5s for STT to decide the caller has stopped, ~1s for the LLM's first words (the whole KB is in the prompt — a smaller KB is faster). On top of that is the deliberate wait for the caller to finish (see Turn-taking).
 
 ### Turn-taking
 
 - "hmm" / "okay" / "haan ji" while the agent talks do not interrupt it — except in the last second of a reply, or after "Shall I send it?", where they are an answer.
-- A caller who pauses mid-sentence is not talked over: if they start speaking again before the agent's audio begins, the audio is held; if more words arrive the reply is redone with the full sentence.
+- The agent does not answer the moment STT ends a transcript, because that may only be a pause. It waits `TURN_END_WAIT_MS` (900ms) more, or `TURN_END_WAIT_UNFINISHED_MS` (2s) if the words sound unfinished ("hello", "I want a room and"). New speech restarts the wait, and everything said is answered together.
+- A caller who pauses longer than that is still not talked over: if they start speaking again before the agent's audio begins, the audio is held; if more words arrive the reply is redone with the full sentence.
 - A bare "hello?" said over the welcome is not answered twice.
 
 ### Difficult callers

@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    init: true
+    ports:
+      - "5001:5001"
+    environment:
+      # Fixed so it always matches the port mapping above, whatever .env says.
+      PORT: "5001"
+    volumes:
+      # Your project folder, live: this is what makes edits apply immediately.
+      # The app reads .env from here too.
+      - .:/app
+      # Keeps the container's Linux packages separate from any Windows node_modules.
+      - /app/node_modules

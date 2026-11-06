@@ -33,7 +33,7 @@ import { isSendOffer, isYes, isNo, claimsToBeSending, isGoodbye, wantsDifferentN
 import { isAbusive } from "../agent/abuse.js";
 import { toSpeakableText } from "../agent/speechText.js";
 import { toWhatsAppNumber, lastDigits } from "../utils/phone.js";
-import { getIgnoreReason } from "./transcriptFilter.js";
+import { getIgnoreReason, soundsUnfinished } from "./transcriptFilter.js";
 import { isNumberPiece, extractDigits, normaliseIndianMobile } from "./numberCapture.js";
 import { buildCatalog, catalogForPrompt } from "../whatsapp/kbCatalog.js";
 import { buildMessages, inferActions } from "../whatsapp/messageBuilder.js";
@@ -150,7 +150,12 @@ export default class CallSession {
 
     // Caller is making sound right now (from STT voice-activity events).
     this.callerSpeaking = false;
+    this.callerVoiceActive = false; // between START_SPEECH and END_SPEECH (callerSpeaking also covers the grace after it)
     this.callerQuietTimer = null;
+
+    // End of the caller's turn: don't answer before turnEndsAt (see waitForCallerToFinish).
+    this.turnEndsAt = 0;
+    this.turnWaitLimitAt = 0;
 
     // Dead air / difficult callers
     this.silenceTimer = null;
@@ -340,6 +345,7 @@ export default class CallSession {
 
     this.log.debug("caller started speaking");
     this.callerSpeaking = true;
+    this.callerVoiceActive = true;
     clearTimeout(this.silenceTimer);
 
     // Safety: never stay "caller is speaking" forever if the end event is lost.
@@ -351,6 +357,7 @@ export default class CallSession {
   // it was a cough / background noise, and the agent may speak.
   handleSpeechEnd() {
     this.log.debug("caller stopped speaking");
+    this.callerVoiceActive = false;
     clearTimeout(this.callerQuietTimer);
     this.callerQuietTimer = setTimeout(() => this.setCallerQuiet(), config.call.callerPauseGraceMs);
   }
@@ -358,6 +365,7 @@ export default class CallSession {
   setCallerQuiet() {
     clearTimeout(this.callerQuietTimer);
     this.callerSpeaking = false;
+    this.callerVoiceActive = false;
     this.releaseHeldAudio();
 
     if (!this.isBusy()) this.armSilenceTimer();
@@ -366,8 +374,12 @@ export default class CallSession {
   handleTranscript(text) {
     if (this.callEnded) return;
 
-    clearTimeout(this.callerQuietTimer);
-    this.callerSpeaking = false;
+    // A transcript can arrive after the caller has already started their next
+    // sentence: it's about the previous one, so they are still speaking.
+    if (!this.callerVoiceActive) {
+      clearTimeout(this.callerQuietTimer);
+      this.callerSpeaking = false;
+    }
 
     // "okay" while the agent talks = listening. But in its last second, or
     // when we asked "Shall I send it?", a short "yes" is an answer, not noise.
@@ -405,6 +417,11 @@ export default class CallSession {
     this.pendingTranscript = this.pendingTranscript
       ? `${this.pendingTranscript} ${text}`
       : text;
+
+    // Give them a moment to go on before answering (see waitForCallerToFinish).
+    const now = Date.now();
+    this.turnEndsAt = now + (soundsUnfinished(text) ? config.call.turnEndWaitUnfinishedMs : config.call.turnEndWaitMs);
+    this.turnWaitLimitAt = now + config.call.callerSpeakingMaxMs;
 
     // Caller talked over the AI -> stop it and answer the new question.
     if (this.isSpeaking) {
@@ -551,6 +568,9 @@ export default class CallSession {
 
     try {
       while (!this.callEnded && (this.pendingTranscript || this.systemTurnQueued)) {
+        await this.waitForCallerToFinish();
+        if (this.callEnded) break;
+
         const transcript = this.pendingTranscript || SYSTEM_TURN;
         this.pendingTranscript = null;
         this.systemTurnQueued = false;
@@ -569,6 +589,18 @@ export default class CallSession {
       this.isProcessing = false;
       this.loopRunning = false;
       this.armSilenceTimer();
+    }
+  }
+
+  // A transcript only means the caller paused, not that they finished. Hold the
+  // answer until the wait has passed with no new speech; more words push it back.
+  // The limit is for a noisy line, where the voice detector may never go quiet.
+  async waitForCallerToFinish() {
+    while (!this.callEnded && this.pendingTranscript) {
+      const now = Date.now();
+      if (now >= this.turnWaitLimitAt) return;
+      if (now >= this.turnEndsAt && !this.callerSpeaking) return;
+      await sleep(50);
     }
   }
 
@@ -1038,7 +1070,7 @@ export default class CallSession {
 
   releaseHeldAudio() {
     const turn = this.turn;
-    if (!turn?.held.length || this.callEnded || this.isStale(turn.id)) return;
+    if (!turn?.held.length || this.callerVoiceActive || this.callEnded || this.isStale(turn.id)) return;
 
     const held = turn.held;
     turn.held = [];

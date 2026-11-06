@@ -231,8 +231,25 @@ const config = {
 
     // Caller started a new sentence just as the agent was about to speak:
     // hold the agent's audio until they finish (max this long).
-    callerSpeakingMaxMs: 6000,
+    callerSpeakingMaxMs: 10000,
     callerPauseGraceMs: 700,
+
+    // STT ends a transcript on a very short pause (~0.6s), which is often just a
+    // breath. Wait this much longer before answering, in case the caller goes on.
+    turnEndWaitMs: Number(process.env.TURN_END_WAIT_MS) || 900,
+    // Longer wait when what they said sounds unfinished ("hello", "I want a room and").
+    turnEndWaitUnfinishedMs: Number(process.env.TURN_END_WAIT_UNFINISHED_MS) || 2000,
+    // A lone greeting or filler: the real sentence is usually still coming.
+    openerWords: [
+      "hello", "helo", "hallo", "hi", "hey", "namaste", "namaskar", "hmm", "hm", "umm", "um", "uh", "uhh",
+      "हेलो", "हैलो", "नमस्ते", "नमस्कार", "हम्म",
+    ],
+    // A sentence ending on one of these is very likely not over.
+    unfinishedEndings: [
+      "and", "but", "or", "so", "because", "if", "then", "that", "the", "a", "an", "to", "of", "for", "with", "in", "on", "at", "my", "like", "um", "uh",
+      "aur", "ya", "par", "lekin", "magar", "kyunki", "ki", "toh", "to", "matlab", "jaise", "ke", "ka", "mera", "meri", "mujhe",
+      "और", "या", "पर", "लेकिन", "मगर", "क्योंकि", "कि", "तो", "मतलब", "जैसे", "के", "का", "की", "मेरा", "मेरी", "मुझे",
+    ],
 
     // Dead air: check in after this much silence, at most this many times, then say bye.
     silenceMs: Number(process.env.SILENCE_MS) || 10000,

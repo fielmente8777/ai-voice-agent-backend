@@ -7,6 +7,20 @@ import config from "../config/env.js";
 
 const FILLERS = new Set(config.call.fillerWords);
 const BACKCHANNEL = new Set(config.call.backchannelWords);
+const OPENERS = new Set(config.call.openerWords);
+const UNFINISHED_ENDINGS = new Set(config.call.unfinishedEndings);
+
+// Does this sound like the caller has more to say? ("hello", "I want a room and")
+export function soundsUnfinished(text) {
+  const words = (text || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (!words.length) return false;
+  return words.every((word) => OPENERS.has(word)) || UNFINISHED_ENDINGS.has(words.at(-1));
+}
 
 // Returns null if OK, otherwise a short reason why it was ignored.
 export function getIgnoreReason(text, { isSpeaking, expectingAnswer = false }) {
